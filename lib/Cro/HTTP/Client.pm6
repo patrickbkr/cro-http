@@ -304,6 +304,12 @@ class Cro::HTTP::Client {
     #| request method with override this completely)
     has Cro::Uri $.base-uri;
 
+    #| A file to log TLS session keys to. These can be used in e.g.
+    #| Wireshark to introspect the traffic.
+    #| Beware: These are the private session keys. They absolutely corrupt
+    #| the security of the session.
+    has $.sslkeylogfile;
+
     #| Whether push promises are accepted by the client
     has $.push-promises;
 
@@ -342,7 +348,7 @@ class Cro::HTTP::Client {
                     :$http-proxy, :$https-proxy,
                     :$!follow = $DEFAULT-MAX-REDIRECTS, :%!auth, :$!http,
                     :$!persistent = True, :$!ca, :$!push-promises = False,
-                    :$timeout, :$!user-agent = 'Cro') {
+                    :$!sslkeylogfile, :$timeout, :$!user-agent = 'Cro') {
         if $cookie-jar ~~ Bool {
             $!cookie-jar = Cro::HTTP::Client::CookieJar.new;
         }
@@ -556,13 +562,15 @@ class Cro::HTTP::Client {
         my Cro::Policy::Timeout $timeout-policy;
         my $request-object = self!assemble-request($method, $parsed-url, $proxy-url, %options, $timeout-policy);
 
+        my $sslkeylogfile = self ?? $!sslkeylogfile // %options<sslkeylogfile> !! %options<sslkeylogfile>;
+
         my constant $redirect-codes = set(301, 302, 303, 307, 308);
         my $enable-push = self ?? $!push-promises // %options<push-promises> !! %options<push-promises>;
 
         Promise(supply {
             my $request-start-time = now;
             my $conn-timeout = $timeout-policy.get-timeout(0, 'connection');
-            whenever self!get-pipeline($proxy-url // $parsed-url, $http, $conn-timeout, $request-log, ca => %options<ca>, :$enable-push) -> $pipeline {
+            whenever self!get-pipeline($proxy-url // $parsed-url, $http, $conn-timeout, $request-log, :$sslkeylogfile, ca => %options<ca>, :$enable-push) -> $pipeline {
                 # Handle connection persistence.
                 if $pipeline !~~ Pipeline2 {
                     unless self.persistent || $request-object.has-header('connection') {
@@ -724,7 +732,7 @@ class Cro::HTTP::Client {
         return False;
     }
 
-    method !get-pipeline(Cro::Uri $url, $http, $conn-timeout, $log-parent, :$ca, :$enable-push) {
+    method !get-pipeline(Cro::Uri $url, $http, $conn-timeout, $log-parent, :$sslkeylogfile, :$ca, :$enable-push) {
         my $secure = $url.scheme.lc eq 'https';
         my $host = $url.host;
         my $port = $url.port // ($secure ?? 443 !! 80);
@@ -736,7 +744,7 @@ class Cro::HTTP::Client {
             Promise.kept($pipeline)
         }
         else {
-            self!build-pipeline($secure, $host, $port, $http, $conn-timeout, $log-parent, :$ca, :$enable-push)
+            self!build-pipeline($secure, $host, $port, $http, $conn-timeout, $log-parent, :$sslkeylogfile, :$ca, :$enable-push)
         }
     }
 
@@ -756,7 +764,7 @@ class Cro::HTTP::Client {
         }
     }
 
-    method !build-pipeline($secure, $host, $port, $http, $conn-timeout, $log-parent, :$ca, :$enable-push) {
+    method !build-pipeline($secure, $host, $port, $http, $conn-timeout, $log-parent, :$sslkeylogfile, :$ca, :$enable-push) {
         my $log-connection = Cro::HTTP::LogTimeline::EstablishConnection.start(
                 $log-parent, :$host, :$port,
                 :secure($secure ?? 'Yes' !! 'No'),
@@ -821,10 +829,10 @@ class Cro::HTTP::Client {
         my $in = Supplier::Preserving.new;
         my %ca = self ?? (self.ca // $ca // {}) !! $ca // {};
         my $out = $version-decision
-            ?? establish($connector, $in.Supply, $log-connection, :nodelay, :$host, :$port, :$conn-timeout, |{%tls-config, %ca})
+            ?? establish($connector, $in.Supply, $log-connection, :nodelay, :$host, :$port, :$conn-timeout, :$sslkeylogfile, |{%tls-config, %ca})
             !! do {
                 my $s = Supplier::Preserving.new;
-                establish($connector, $in.Supply, $log-connection, :nodelay, :$host, :$port, :$conn-timeout, |{%tls-config, %ca}).tap:
+                establish($connector, $in.Supply, $log-connection, :nodelay, :$host, :$port, :$conn-timeout, :$sslkeylogfile, |{%tls-config, %ca}).tap:
                     { $s.emit($_) },
                     done => { $s.done },
                     quit => {
