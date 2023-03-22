@@ -175,6 +175,7 @@ class Cro::HTTP::Client {
         has %!outstanding-stream-responses{Int};
 
         submethod BUILD(:$!secure!, :$!host!, :$!port!, :$!in!, :$out!, :$go-away-supply!) {
+            "crolog".IO.spurt: "pipeline BUILD" ~ self.WHICH ~ "\n", :append;
             $go-away-supply.tap: -> $last-processed-sid {
                 $!dead = True;
                 $!lock.protect: {
@@ -206,14 +207,18 @@ class Cro::HTTP::Client {
 
         method send-request(Cro::HTTP::Request $request --> Promise) {
             my $p = Promise.new;
+            my $stream-id;
             $!lock.protect: {
-                my $stream-id = $!next-stream-id;
+                $stream-id = $!next-stream-id;
                 $!next-stream-id += 2;
                 $request.http2-stream-id = $stream-id;
                 $request.http-version = '2.0';
                 %!outstanding-stream-responses{$stream-id} = $p.vow;
             }
+            "crolog".IO.spurt: "before req $stream-id " ~ self.WHICH ~ "\n", :append;
+            "crolog".IO.spurt: "supply: " ~ $!in.WHICH ~ "\n", :append;
             $!in.emit($request);
+            "crolog".IO.spurt: "after req $stream-id " ~ self.WHICH ~ "\n", :append;
             $p
         }
 
@@ -835,6 +840,9 @@ class Cro::HTTP::Client {
                 add-body-parsers => $.add-body-parsers,
                 body-parsers => $.body-parsers;
         }
+        say "PARTS";
+        say $_.WHAT for @parts;
+        say "";
         my $connector = Cro.compose(|@parts);
 
         my %tls-config;
@@ -847,11 +855,15 @@ class Cro::HTTP::Client {
                     ((self ?? (self.ca // %$ca) !! %$ca) // Empty);
         }
         my $in = Supplier::Preserving.new;
+        my $supply = $in.Supply;
+        "crolog".IO.spurt: "START!!!!!!!!!!!!!!!!\n", :append;
+        "crolog".IO.spurt: "supplier: " ~ $in.WHICH ~ "\n", :append;
+        "crolog".IO.spurt: "supply: " ~ $supply.WHICH ~ "\n", :append;
         my $out = $version-decision
-            ?? establish($connector, $in.Supply, $log-connection, :nodelay, :$host, :$port, :$conn-timeout, |%tls-config)
+            ?? establish($connector, $supply, $log-connection, :nodelay, :$host, :$port, :$conn-timeout, |%tls-config)
             !! do {
                 my $s = Supplier::Preserving.new;
-                establish($connector, $in.Supply, $log-connection, :nodelay, :$host, :$port, :$conn-timeout, |%tls-config).tap:
+                establish($connector, $supply, $log-connection, :nodelay, :$host, :$port, :$conn-timeout, |%tls-config).tap:
                     { $s.emit($_) },
                     done => { $s.done },
                     quit => {
@@ -880,7 +892,9 @@ class Cro::HTTP::Client {
                 $log-connection.end;
             });
             whenever $connection -> Cro::Transform $transform {
+                "crolog".IO.spurt: "Connection up! Setting up request pipeline: " ~ $incoming.WHICH ~ "\n", :append;
                 whenever $transform.transformer($incoming) -> $msg {
+                    "crolog".IO.spurt: "establish() Processing: " ~ $msg.WHICH ~ "\n", :append;
                     emit $msg;
                     LAST done;
                 }

@@ -12,13 +12,17 @@ class Cro::HTTP2::FrameSerializer does Cro::Transform does Cro::ConnectionState[
     method produces() { Cro::TCP::Message }
 
     method transformer(Supply:D $in, Cro::HTTP2::ConnectionState :$connection-state!) {
+        "crolog".IO.spurt: "Setting up FrameSeralizer transformer with: " ~ $in.WHICH ~ "\n", :append;
         supply {
+            "crolog".IO.spurt: "FrameSerializer tapped start: " ~ $in.WHICH ~ "\n", :append;
             # If it's a client, always start out by sending connection preface
             # and an empty settings frame.
             if $!client {
+            "crolog".IO.spurt: "FrameSerializer tapped 0\n", :append;
                 emit Cro::TCP::Message.new(data => blob8.new(
                     80,82,73,32,42,32,72,84,84,80,47,50,
                     46,48,13,10,13,10,83,77,13,10,13,10));
+            "crolog".IO.spurt: "FrameSerializer tapped 0.5\n", :append;
                 send-message Cro::HTTP2::Frame::Settings.new(
                     flags => 0, stream-identifier => 0,
                     settings => (1 => 4096, 2 => $!enable-push ?? 1 !! 0,
@@ -27,21 +31,35 @@ class Cro::HTTP2::FrameSerializer does Cro::Transform does Cro::ConnectionState[
                 );
             }
 
+            "crolog".IO.spurt: "FrameSerializer tapped 1\n", :append;
             my $MAX-FRAME-SIZE = 2 ** 14;
             sub send-message($frame, $consumes-window = False) {
+                "crolog".IO.spurt: "FrameSerializer tapped 0.6\n", :append;
                 if $consumes-window {
+                "crolog".IO.spurt: "FrameSerializer tapped 0.7\n", :append;
                     my $promise = Promise.new;
                     $connection-state.remote-window-change.emit: Cro::HTTP2::ConnectionState::WindowConsume.new(
                         stream-identifier => $frame.stream-identifier,
                         bytes => $frame.data.bytes + ($frame.padded ?? 8 + $frame.padding-length !! 0),
                         :$promise,
                     );
+                    "crolog".IO.spurt: "FrameSerializer tapped 0.8\n", :append;
                     await $promise;
+                    "crolog".IO.spurt: "FrameSerializer tapped 0.9\n", :append;
                 }
+                "crolog".IO.spurt: "FrameSerializer tapped 0.10\n", :append;
                 my $result = self!form-header($frame);
+                "crolog".IO.spurt: "FrameSerializer tapped 0.11\n", :append;
                 self!serializer($result, $frame);
-                emit Cro::TCP::Message.new(data => $result);
+                "crolog".IO.spurt: "FrameSerializer tapped 0.12\n", :append;
+
+                my $msg = Cro::TCP::Message.new(data => $result);
+                dd $msg;
+                "crolog".IO.spurt: "FrameSerializer tapped 0.13\n", :append;
+                emit $msg;
+                "crolog".IO.spurt: "FrameSerializer tapped 0.14\n", :append;
             }
+            "crolog".IO.spurt: "FrameSerializer tapped 2\n", :append;
 
             sub send-splitted($frame, $consumes-window = False) {
                 my $is-header = $frame ~~ Cro::HTTP2::Frame::Headers|Cro::HTTP2::Frame::PushPromise;
@@ -73,6 +91,7 @@ class Cro::HTTP2::FrameSerializer does Cro::Transform does Cro::ConnectionState[
                 }
             }
 
+            "crolog".IO.spurt: "FrameSerializer tapped 3\n", :append;
             with $connection-state.ping {
                 whenever $connection-state.ping.Supply {
                     my $ack = Cro::HTTP2::Frame::Ping.new(
@@ -81,12 +100,14 @@ class Cro::HTTP2::FrameSerializer does Cro::Transform does Cro::ConnectionState[
                     send-message($ack);
                 }
             }
+            "crolog".IO.spurt: "FrameSerializer tapped 4\n", :append;
             with $connection-state.stream-reset {
                 whenever $connection-state.stream-reset.Supply -> $n {
                     my $rst-stream = Cro::HTTP2::Frame::RstStream.new(error-code => CANCEL, stream-identifier => $n, flags => 0);
                     send-message($rst-stream);
                 }
             }
+            "crolog".IO.spurt: "FrameSerializer tapped 5\n", :append;
             with $connection-state.settings {
                 whenever $connection-state.settings.Supply {
                     for .settings -> $pair {
@@ -112,12 +133,14 @@ class Cro::HTTP2::FrameSerializer does Cro::Transform does Cro::ConnectionState[
                     send-message($ack);
                 }
             }
+            "crolog".IO.spurt: "FrameSerializer tapped 6\n", :append;
             with $connection-state.window-size {
                 whenever $connection-state.window-size.Supply {
                     send-message($_);
                 }
             }
 
+            "crolog".IO.spurt: "FrameSerializer tapped: " ~ $in.WHICH ~ "\n", :append;
             whenever $in -> Cro::HTTP2::Frame $frame {
                 if $frame ~~ Cro::HTTP2::Frame::Headers|Cro::HTTP2::Frame::PushPromise {
                     if $frame.headers.elems + 9 > $MAX-FRAME-SIZE {

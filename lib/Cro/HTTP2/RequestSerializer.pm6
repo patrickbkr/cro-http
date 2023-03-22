@@ -8,7 +8,10 @@ class Cro::HTTP2::RequestSerializer does Cro::Transform {
     method produces() { Cro::HTTP2::Frame  }
 
     method transformer(Supply:D $in) {
+
+        "crolog".IO.spurt: "Setting up RequestSerializer transformer with: " ~ $in.WHICH ~ "\n", :append;
         supply {
+            "crolog".IO.spurt: "RequestSerializer tapped: " ~ $in.WHICH ~ "\n", :append;
             whenever $in -> Cro::HTTP::Request $req {
                 my $encoder = HTTP::HPACK::Encoder.new;
 

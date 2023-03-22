@@ -44,22 +44,31 @@ role Cro::HTTP2::GeneralParser does Cro::ConnectionState[Cro::HTTP2::ConnectionS
                 }
             }
 
-            whenever $connection-state.push-promise.Supply { emit $_ }
+            whenever $connection-state.push-promise.Supply {
+                "crolog".IO.spurt: "GeneralParser connectionstate push promise START: " ~ $_.WHICH ~ "\n", :append;
+                emit $_;
+                "crolog".IO.spurt: "GeneralParser connectionstate push promise FINISHED: " ~ $_.WHICH ~ "\n", :append;
+            }
             whenever $connection-state.settings.Supply {
+                "crolog".IO.spurt: "GeneralParser connectionstate settings START: " ~ $_.WHICH ~ "\n", :append;
                 when Cro::HTTP2::Frame::Settings {
                     with .settings.first(*.key == 1) {
                         $decoder.set-dynamic-table-limit(.value);
+                        "crolog".IO.spurt: "GeneralParser connectionstate settings sdtl FINISHED: " ~ $_.WHICH ~ "\n", :append;
                     }
                     with .settings.first(*.key == 2) {
                         $!enable-push = .value != 0;
+                        "crolog".IO.spurt: "GeneralParser connectionstate settings ep FINISHED: " ~ $_.WHICH ~ "\n", :append;
                     }
                     with .settings.first(*.key == 4) {
                         $connection-state.remote-window-change.emit: Cro::HTTP2::ConnectionState::WindowInitial.new(initial => .value);
+                        "crolog".IO.spurt: "GeneralParser connectionstate settings rwc FINISHED: " ~ $_.WHICH ~ "\n", :append;
                     }
                 }
             }
 
             whenever $in {
+                "crolog".IO.spurt: "GeneralParser MESSAGE START: " ~ $in.WHICH ~ "\n", :append;
                 if !$breakable {
                     if $_ !~~ Cro::HTTP2::Frame::Continuation
                     || $break != .stream-identifier {
@@ -76,6 +85,7 @@ role Cro::HTTP2::GeneralParser does Cro::ConnectionState[Cro::HTTP2::ConnectionS
                             $stream.body.done;
                         }
                     }
+                    "crolog".IO.spurt: "GeneralParser MESSAGE data FINISHED: " ~ $in.WHICH ~ "\n", :append;
                 }
                 when Cro::HTTP2::Frame::Headers {
                     unless %streams{.stream-identifier}:exists {
@@ -139,8 +149,10 @@ role Cro::HTTP2::GeneralParser does Cro::ConnectionState[Cro::HTTP2::ConnectionS
                         $stream.body.done if .end-stream;
                         $stream.state = header-c;
                     }
+                    "crolog".IO.spurt: "GeneralParser MESSAGE headers FINISHED: " ~ $in.WHICH ~ "\n", :append;
                 }
                 when Cro::HTTP2::Frame::Priority {
+                    "crolog".IO.spurt: "GeneralParser MESSAGE prio FINISHED: " ~ $in.WHICH ~ "\n", :append;
                 }
                 when Cro::HTTP2::Frame::RstStream {
                     with %push-promises-by-promised-id{.stream-identifier}:delete {
@@ -156,6 +168,7 @@ role Cro::HTTP2::GeneralParser does Cro::ConnectionState[Cro::HTTP2::ConnectionS
                         die 'Stream reset by the server';
                     }
                     %push-promises-for-stream{.stream-identifier}:delete;
+                    "crolog".IO.spurt: "GeneralParser MESSAGE rst FINISHED: " ~ $in.WHICH ~ "\n", :append;
                 }
                 when Cro::HTTP2::Frame::PushPromise {
                     my @headers = $decoder.decode-headers(Buf.new: .headers);
@@ -168,6 +181,7 @@ role Cro::HTTP2::GeneralParser does Cro::ConnectionState[Cro::HTTP2::ConnectionS
                     my @real-headers = @headers.grep({ not .name eq any <:method :scheme :authority :path :status> });
                     for @real-headers { $pp.append-header(.name => .value) }
                     push %push-promises-for-stream{.stream-identifier}, $pp;
+                    "crolog".IO.spurt: "GeneralParser MESSAGE pushp FINISHED: " ~ $in.WHICH ~ "\n", :append;
                 }
                 when Cro::HTTP2::Frame::GoAway {
                     $!go-away-supplier.emit: .last-sid;
@@ -184,11 +198,13 @@ role Cro::HTTP2::GeneralParser does Cro::ConnectionState[Cro::HTTP2::ConnectionS
                         }
                     }
                     %push-promises-for-stream{.stream-identifier}:delete;
+                    "crolog".IO.spurt: "GeneralParser MESSAGE goaway FINISHED: " ~ $in.WHICH ~ "\n", :append;
                 }
                 when Cro::HTTP2::Frame::WindowUpdate {
                     $connection-state.remote-window-change.emit: Cro::HTTP2::ConnectionState::WindowAdd.new:
                         stream-identifier => .stream-identifier,
                         increment => .increment;
+                    "crolog".IO.spurt: "GeneralParser MESSAGE winupd FINISHED: " ~ $in.WHICH ~ "\n", :append;
                 }
                 when Cro::HTTP2::Frame::Continuation {
                     if .stream-identifier > $curr-sid
@@ -215,8 +231,10 @@ role Cro::HTTP2::GeneralParser does Cro::ConnectionState[Cro::HTTP2::ConnectionS
                     } else {
                         %streams{.stream-identifier}.headers ~= .headers;
                     }
+                    "crolog".IO.spurt: "GeneralParser MESSAGE cont FINISHED: " ~ $in.WHICH ~ "\n", :append;
                 }
                 LAST done;
+                "crolog".IO.spurt: "GeneralParser MESSAGE no when FINISHED: " ~ $in.WHICH ~ "\n", :append;
             }
         }
     }

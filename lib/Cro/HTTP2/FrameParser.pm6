@@ -29,6 +29,7 @@ class Cro::HTTP2::FrameParser does Cro::Transform does Cro::ConnectionState[Cro:
             my Expecting $expecting = Header;
 
             whenever $in -> Cro::TCP::Message $packet {
+                "crolog".IO.spurt: "FrameParser MESSAGE START: " ~ $in.WHICH ~ "\n", :append;
                 my $data = $buffer ~ $packet.data;
                 $buffer = Buf.new;
 
@@ -42,8 +43,10 @@ class Cro::HTTP2::FrameParser does Cro::Transform does Cro::ConnectionState[Cro:
                     }
                 }
 
+                "crolog".IO.spurt: "FrameParser MESSAGE 1\n", :append;
                 loop {
                     $_ = $expecting;
+                    "crolog".IO.spurt: "FrameParser MESSAGE 2\n", :append;
 
                     when Header {
                         if $data.elems < 9 {
@@ -59,11 +62,15 @@ class Cro::HTTP2::FrameParser does Cro::Transform does Cro::ConnectionState[Cro:
                         }
                     }
                     when Payload {
+                        "crolog".IO.spurt: "FrameParser MESSAGE 3\n", :append;
                         if $data.elems >= $length {
+                            "crolog".IO.spurt: "FrameParser MESSAGE 4\n", :append;
                             my $result = payload($type, $data, $length, :$flags,
                                                  stream-identifier => $sid,
                                                  conn => $packet.connection);
+                            "crolog".IO.spurt: "FrameParser MESSAGE 6\n", :append;
                             if $result ~~ Cro::HTTP2::Frame::Data {
+                                "crolog".IO.spurt: "FrameParser MESSAGE 7\n", :append;
                                 unless $result.end-stream {
                                     start {
                                         my $bytes = $result.data.bytes;
@@ -79,19 +86,24 @@ class Cro::HTTP2::FrameParser does Cro::Transform does Cro::ConnectionState[Cro:
                                 }
                                 emit $result;
                             } elsif $result ~~ Cro::HTTP2::Frame::Settings {
+                                "crolog".IO.spurt: "FrameParser MESSAGE 8\n", :append;
                                 unless $flags +& 1 {
                                     $!client
                                     ?? (start $connection-state.settings.emit($result))
                                     !! ($connection-state.settings.emit($result));
                                 }
                             } elsif $result ~~ Cro::HTTP2::Frame::Ping {
+                                "crolog".IO.spurt: "FrameParser MESSAGE 9\n", :append;
                                 start $connection-state.ping.emit($result);
                             } else {
+                                "crolog".IO.spurt: "FrameParser MESSAGE 10\n", :append;
                                 emit $result;
+                                "crolog".IO.spurt: "FrameParser MESSAGE 11\n", :append;
                             }
                             $data .= subbuf($length);
                             $expecting = Header; next if $data.elems > 0;
                         } else {
+                            "crolog".IO.spurt: "FrameParser MESSAGE 5\n", :append;
                             $buffer.append: $data;
                             last;
                         }
@@ -100,6 +112,7 @@ class Cro::HTTP2::FrameParser does Cro::Transform does Cro::ConnectionState[Cro:
                 LAST {
                     die X::Cro::HTTP2::Disconnect.new if $expecting != Header;
                 }
+                "crolog".IO.spurt: "FrameParser MESSAGE FINISHED: " ~ $in.WHICH ~ "\n", :append;
             }
         }
     }

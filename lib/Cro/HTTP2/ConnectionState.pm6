@@ -50,6 +50,7 @@ class Cro::HTTP2::ConnectionState {
                 my $stream = .stream-identifier;
                 @!remote-window-sizes[$stream] = $!initial-window-size without @!remote-window-sizes[$stream];
                 unless check-window-size($_) {
+                    "crolog".IO.spurt: "Connectionstate WINDOW CONSUME QUEUED\n", :append;
                     @!remote-window-consume-queue.push($_)
                 }
             }
