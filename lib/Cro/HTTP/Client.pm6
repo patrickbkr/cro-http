@@ -840,9 +840,9 @@ class Cro::HTTP::Client {
                 add-body-parsers => $.add-body-parsers,
                 body-parsers => $.body-parsers;
         }
-        say "PARTS";
-        say $_.WHAT for @parts;
-        say "";
+        #say "PARTS";
+        #say $_.WHAT for @parts;
+        #say "";
         my $connector = Cro.compose(|@parts);
 
         my %tls-config;

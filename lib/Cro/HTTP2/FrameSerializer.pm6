@@ -54,7 +54,7 @@ class Cro::HTTP2::FrameSerializer does Cro::Transform does Cro::ConnectionState[
                 "crolog".IO.spurt: "FrameSerializer tapped 0.12\n", :append;
 
                 my $msg = Cro::TCP::Message.new(data => $result);
-                dd $msg;
+                #dd $msg;
                 "crolog".IO.spurt: "FrameSerializer tapped 0.13\n", :append;
                 emit $msg;
                 "crolog".IO.spurt: "FrameSerializer tapped 0.14\n", :append;
