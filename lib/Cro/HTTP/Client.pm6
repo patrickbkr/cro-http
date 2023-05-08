@@ -595,12 +595,15 @@ class Cro::HTTP::Client {
                 my Bool $headers-kept = False;
                 if $timeout !~~ Inf {
                     whenever Promise.in($timeout) {
+
+                        "crolog".IO.spurt: "Setup header timeout, pipeline: " ~ $pipeline.WHICH ~ "\n", :append;
                         die X::Cro::HTTP::Client::Timeout.new(phase => 'headers', uri => $url) unless $headers-kept;
                     }
                 }
 
                 # Send the request.
                 whenever $pipeline.send-request($request-object) {
+                    "crolog".IO.spurt: "Headers received, pipeline: " ~ $pipeline.WHICH ~ "\n", :append;
                     $headers-kept = True;
                     QUIT { $request-log.end }
 
